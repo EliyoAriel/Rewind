@@ -1,0 +1,16 @@
+com\rewind\regions\RegionStorage.class
+com\rewind\snapshot\SnapshotSerializer$SnapshotData.class
+com\rewind\snapshot\SnapshotKey.class
+com\rewind\listeners\BlockChangeListener.class
+com\rewind\snapshot\SnapshotManager.class
+com\rewind\regions\Region$Type.class
+com\rewind\regions\RegionManager.class
+com\rewind\scheduler\RestoreScheduler$RestoreTask.class
+com\rewind\regions\Region.class
+com\rewind\scheduler\RestoreScheduler.class
+com\rewind\whitelist\WhitelistManager.class
+com\rewind\snapshot\SnapshotSerializer.class
+com\rewind\RewindPlugin.class
+com\rewind\commands\RewindCommand.class
+com\rewind\scheduler\RestoreScheduler$ChunkCoord.class
+com\rewind\DebugManager.class

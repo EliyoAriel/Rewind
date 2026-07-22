@@ -1,0 +1,32 @@
+name: Rewind
+version: ${project.version}
+main: com.rewind.RewindPlugin
+api-version: '1.21'
+description: Snapshot-based temporary region restore for Paper servers
+softdepend: [WorldEdit]
+
+commands:
+  rewind:
+    description: Rewind main command
+    usage: /rewind <create|delete|list|restore|info>
+    permission: rewind.info
+
+permissions:
+  rewind.create:
+    description: Create regions
+    default: op
+  rewind.delete:
+    description: Delete regions
+    default: op
+  rewind.list:
+    description: List regions
+    default: true
+  rewind.restore:
+    description: Manual restore
+    default: op
+  rewind.info:
+    description: View info
+    default: true
+  rewind.bypass:
+    description: Bypass tracking
+    default: false
