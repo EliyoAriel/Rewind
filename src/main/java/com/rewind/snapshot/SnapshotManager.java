@@ -29,6 +29,14 @@ public class SnapshotManager {
         rebuildIndex();
     }
 
+    public void loadWhitelist(java.util.List<String> blocks) {
+        serializer.loadWhitelist(blocks);
+    }
+
+    public SnapshotSerializer getSerializer() {
+        return serializer;
+    }
+
     private void rebuildIndex() {
         File[] files = snapshotDir.listFiles((dir, name) -> name.endsWith(".rewind"));
         if (files == null) return;
@@ -43,14 +51,27 @@ public class SnapshotManager {
 
     public boolean hasSnapshot(String worldName, int chunkX, int chunkZ) {
         SnapshotKey key = new SnapshotKey(worldName, chunkX, chunkZ);
-        return snapshotIndex.containsKey(key) && getDiskFile(key).exists();
+        File file = getDiskFile(key);
+        if (!file.exists()) {
+            snapshotIndex.remove(key);
+            return false;
+        }
+        return true;
     }
 
     public void queueSnapshot(World world, int chunkX, int chunkZ) {
         SnapshotKey key = new SnapshotKey(world.getName(), chunkX, chunkZ);
-        if (!hasSnapshot(world.getName(), chunkX, chunkZ)) {
-            snapshotQueue.add(key);
+
+        File file = getDiskFile(key);
+        if (file.exists()) {
+            if (!snapshotIndex.containsKey(key)) {
+                snapshotIndex.put(key, file.lastModified());
+            }
+            return;
         }
+
+        snapshotIndex.remove(key);
+        snapshotQueue.add(key);
     }
 
     public void processSnapshotQueue() {
@@ -134,13 +155,6 @@ public class SnapshotManager {
     public void cleanupAll() {
         snapshotIndex.clear();
         snapshotQueue.clear();
-
-        File[] files = snapshotDir.listFiles();
-        if (files != null) {
-            for (File file : files) {
-                file.delete();
-            }
-        }
     }
 
     public Set<SnapshotKey> getSnapshotKeysInRegion(String worldName,

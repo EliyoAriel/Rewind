@@ -1,15 +1,21 @@
-# Rewind - Temporary Region Plugin
+# Rewind - Temporary Region Restore Plugin
 
-A Minecraft Paper plugin that makes blocks in designated regions temporarily change, then automatically restore to their original state.
+A Minecraft Paper plugin that snapshots designated regions, then automatically restores them after block changes. Manual restore also supported.
 
 ## Features
 
-- **Per-chunk snapshots** - Each chunk is independently backed up and restored
+- **Per-chunk snapshots** - Each chunk independently backed up and restored
+- **Async restore** - GZIP decompression and material resolution off main thread
 - **Gradual restore** - Chunks restore one-by-one, not all at once
-- **Player-aware** - Chunks won't restore while players are nearby
-- **Multiple triggers** - Tracks player changes, fire, explosions, pistons, water/lava, and more
-- **Disk-only storage** - Snapshots stored on disk with gzip compression, minimal memory usage
-- **Palette compression** - ~2-8KB per chunk (vs ~500KB raw)
+- **Manual restore** - Force restore with `/rewind restore`, bypasses player distance check
+- **Player-aware** - Automatic restore skips chunks near players, retries later
+- **14 block triggers** - Tracks player changes, fire, explosions, pistons, water/lava, growth, and more
+- **Interaction blocks** - Doors, plants, pistons etc. don't trigger restore (configurable)
+- **Block whitelist** - Chests, signs, banners etc. skip restore (configurable)
+- **Priority system** - Timer based on change count (low/normal/high)
+- **WorldEdit support** - Create cuboid regions from WE selection
+- **Disk-only storage** - Snapshots on disk with gzip + palette compression (~2-8KB per chunk)
+- **Action bar notifications** - Progress bar and completion messages
 
 ## Installation
 
@@ -17,81 +23,123 @@ A Minecraft Paper plugin that makes blocks in designated regions temporarily cha
 2. Place in your server's `plugins/` folder
 3. Restart the server
 
-## Configuration
-
-```yaml
-# config.yml
-
-general:
-  default-timer: 60          # Default restore timer in seconds
-  debug-mode: false          # Enable debug logging
-
-restore:
-  chunks-per-interval: 1     # Chunks restored per interval
-  interval-ticks: 20         # Delay between restore intervals (20 = 1 second)
-  min-distance-chunks: 5     # Skip restore if player within this many chunks
-
-storage:
-  snapshot-dir: snapshots    # Directory for snapshot files
-
-messages:
-  prefix: "&6[Rewind] &r"
-  region-created: "&aRegion &e%name% &acreated!"
-  region-deleted: "&cRegion &e%name% &cdeleted."
-  region-not-found: "&cRegion &e%name% &cnot found."
-  restore-complete: "&aAll regions restored!"
-  no-permission: "&cYou don't have permission to do this."
-```
-
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `/rewind create <name> [radius]` | Create a region at your location |
-| `/rewind delete <name>` | Delete a region and its snapshots |
-| `/rewind list` | List all regions |
-| `/rewind restore` | Restore all regions |
-| `/rewind restore <name>` | Restore entire region |
-| `/rewind restore <name> <chunkX> <chunkZ>` | Restore specific chunk |
-| `/rewind restore <name> <x1> <z1> <x2> <z2>` | Restore chunk area |
-| `/rewind info` | View plugin info |
-| `/rewind info <name>` | View region info |
-| `/rewind debug` | Toggle debug mode |
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/rewind create <name> [radius]` | Create region (radius or WorldEdit selection) | `rewind.create` |
+| `/rewind delete <name>` | Delete region and its snapshots | `rewind.delete` |
+| `/rewind list` | List all regions | `rewind.list` |
+| `/rewind restore` | Force restore all regions | `rewind.restore` |
+| `/rewind restore <name>` | Force restore entire region | `rewind.restore` |
+| `/rewind restore <name> <chunkX> <chunkZ>` | Force restore specific chunk | `rewind.restore` |
+| `/rewind restore <name> <x1> <z1> <x2> <z2>` | Force restore chunk area | `rewind.restore` |
+| `/rewind info` | View plugin info | `rewind.info` |
+| `/rewind info <name>` | View region info | `rewind.info` |
+| `/rewind reload` | Reload config | `rewind.admin` |
+| `/rewind debug` | Toggle debug mode | `rewind.debug` |
 
 ## Permissions
 
-| Permission | Description |
-|------------|-------------|
-| `rewind.create` | Create regions |
-| `rewind.delete` | Delete regions |
-| `rewind.restore` | Restore regions |
-| `rewind.info` | View info |
-| `rewind.bypass` | Bypass region tracking |
-| `rewind.admin` | All permissions |
+| Permission | Default | Description |
+|------------|---------|-------------|
+| `rewind.create` | op | Create regions |
+| `rewind.delete` | op | Delete regions |
+| `rewind.list` | true | List regions |
+| `rewind.restore` | op | Manual restore + progress bar |
+| `rewind.info` | true | View info |
+| `rewind.bypass` | false | Bypass block change tracking |
+| `rewind.debug` | op | Toggle debug mode |
+| `rewind.admin` | op | Reload config |
+
+## Configuration
+
+```yaml
+priority:
+  low-changes-threshold: 5         # 1-5 blocks = low priority
+  normal-changes-threshold: 20     # 6-20 blocks = normal priority
+  high-changes-threshold: 50       # 21+ blocks = high priority
+  low-priority-seconds: 300        # Low priority timer (5 min)
+  normal-priority-seconds: 60      # Normal priority timer (1 min)
+  high-priority-seconds: 30        # High priority timer (30 sec)
+
+restore:
+  chunks-per-interval: 1           # Chunks restored per interval
+  interval-ticks: 20               # Delay between restore intervals
+  min-distance-chunks: 5           # Skip restore if player nearby
+
+notifications:
+  enabled: true
+  chat: "&eChunk at &6%x%, %z% &erestoring in &6%seconds%s"
+  seconds-before: 5
+
+progress:
+  enabled: true
+  chat: "&eRestoring chunks... &6[%bar%] &e%done%/%total%"
+  bar-length: 20
+  bar-filled: "="
+  bar-empty: "-"
+
+sounds:
+  enabled: true
+  sound: "ENTITY_EXPERIENCE_ORB_PICKUP"
+  volume: 1.0
+  pitch: 1.0
+
+interaction-blocks:
+  enabled: true                    # State-only blocks skip restore
+  blocks:
+    - OAK_DOOR
+    - LEVER
+    - WHEAT
+    - COMPOSTER
+    # ... (80+ materials in default config)
+
+whitelist:
+  enabled: false                   # These blocks skip restore on snapshot
+  blocks:
+    - CHEST
+    - OAK_SIGN
+    - PAINTING
+    # ... (60+ materials in default config)
+```
 
 ## How It Works
 
 ### 1. Region Creation
 
-When you create a region, the plugin:
-- Queues all chunks in the region for snapshot
-- Processes 10 chunks per tick (only loaded chunks)
-- Saves compressed snapshots to disk
+When you create a region (`/rewind create`):
+- All chunks in the region are queued for snapshot
+- Processes 10 chunks/tick (only loaded chunks are snapshotted)
+- Unloaded chunks are skipped (no async chunk loading for snapshots)
+- Snapshots saved to disk as compressed binary files
 
-### 2. Block Changes
+### 2. Automatic Restore
 
 When a block changes in a region:
-- The chunk's original state is already saved
-- A restore timer starts (default 60 seconds)
-- If another change happens, timer resets
+- Timer starts based on region's configured time (default 60s)
+- Once a timer starts, it does **not** reset on subsequent changes
+- When timer expires, chunk added to gradual restore queue
+- Every 1 second, 1 chunk restored (configurable)
+- If player within 5 chunks, restore is delayed until they move away
+- After 100 ticks of being stuck, forces restore anyway
 
-### 3. Restore Process
+### 3. Manual Restore
 
-When timer expires:
-- Chunk added to restore queue
-- Every 1 second, 1 chunk is restored
-- If player is within 5 chunks, restore is delayed
-- Player moves away, restore happens
+`/rewind restore <name>`:
+- Bypasses player distance check (restores immediately)
+- Bypasses timer (restores now)
+- Shows action bar progress to online players
+- Shows "Rewind complete!" when done
+- Runs async — GZIP decompression off main thread, block placement on main thread
+
+### 4. Interaction Blocks
+
+State-only blocks (doors, plants, pistons, etc.) don't trigger restore timers. This prevents farms, redstone, and player interactions from starting unnecessary restore countdowns.
+
+### 5. Block Whitelist
+
+When enabled, whitelisted blocks (chests, signs, banners) are skipped during restore. Their contents/state are preserved.
 
 ## Triggered Events
 
@@ -103,7 +151,7 @@ When timer expires:
 | `BlockIgniteEvent` | Block catching fire |
 | `BlockExplodeEvent` | TNT, etc. |
 | `EntityExplodeEvent` | Creepers, dragons |
-| `BlockSpreadEvent` | Fire/mushroom/tree |
+| `BlockSpreadEvent` | Fire/mushroom/tree spread |
 | `BlockFadeEvent` | Ice melting |
 | `BlockFormEvent` | Snow/ice forming |
 | `BlockFromToEvent` | Water/lava flow |
@@ -112,14 +160,15 @@ When timer expires:
 | `BlockPistonRetractEvent` | Pistons pulling |
 | `LeavesDecayEvent` | Leaves decaying |
 
-## File Format
+## Snapshot Format
 
-Snapshots use a compressed binary format:
+Binary format with gzip compression (~2-8KB per chunk):
 
 - **Magic bytes**: `REW`
 - **Format version**: 2
-- **Palette + indices**: Stores unique materials once, references by index
-- **Gzip compression**: ~2-8KB per chunk
+- **Palette**: Stores unique material names once
+- **Indexed block storage**: Each block references palette by index (byte or short)
+- **Material cache**: Pre-built at deserialization for fast apply
 
 ## Performance
 
@@ -127,19 +176,21 @@ Snapshots use a compressed binary format:
 |--------|-------|
 | Snapshot size | ~2-8KB per chunk |
 | Snapshot creation | 10 chunks/tick |
-| Restore speed | 1 chunk/second |
-| Memory usage | Minimal (index only) |
-
-## Multiverse Support
-
-Fully compatible with Multiverse. Worlds are resolved by name automatically.
+| Restore speed | 1 chunk/interval (configurable) |
+| Memory usage | Minimal (ConcurrentHashMap index only) |
+| Decompression | Async (off main thread) |
+| Material resolution | Cached per-chunk at load time |
 
 ## Debug Mode
 
-Enable with `/rewind debug` or set `debug-mode: true` in config.
+Enable with `/rewind debug` (requires `rewind.debug` permission).
 
 Debug logs:
 - Snapshot queue events
-- Restore queue events
-- Region create/delete
+- Restore queue events  
+- Timer management
+- Player distance checks
 - Performance timing
+- Interaction block skips
+
+Notifications and progress bar only show during automatic restores when debug is enabled. Manual restore always shows progress.

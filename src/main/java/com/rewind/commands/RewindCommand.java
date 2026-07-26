@@ -70,6 +70,9 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
             case "debug" -> {
                 return handleDebug(sender);
             }
+            case "reload" -> {
+                return handleReload(sender);
+            }
             default -> {
                 sendHelp(sender);
                 return true;
@@ -111,10 +114,68 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
 
-            player.sendMessage("§cPlease select a WorldEdit region first.");
+            Region region = createRegionFromWorldEdit(player, name);
+            if (region == null) {
+                player.sendMessage("§cPlease select a WorldEdit region first (//pos1, //pos2 or //sel cuboid).");
+                return true;
+            }
+
+            long start = System.currentTimeMillis();
+            if (regionManager.createRegion(region)) {
+                queueRegionSnapshot(player.getWorld(), region);
+                debug.performance("create region " + name, start);
+                player.sendMessage("§aRegion §e" + name + " §acreated! (cuboid)");
+            } else {
+                player.sendMessage("§cRegion §e" + name + " §calready exists.");
+            }
         }
 
         return true;
+    }
+
+    private Region createRegionFromWorldEdit(Player player, String name) {
+        try {
+            Class<?> weClass = Class.forName("com.sk89q.worldedit.bukkit.WorldEdit");
+            Object weInstance = weClass.getMethod("getInstance").invoke(null);
+
+            Class<?> bukkitAdapterClass = Class.forName("com.sk89q.worldedit.bukkit.BukkitAdapter");
+            Object wePlayer = bukkitAdapterClass.getMethod("adapt", org.bukkit.entity.Player.class).invoke(null, player);
+
+            Object sessionManager = weClass.getMethod("getSessionManager").invoke(weInstance);
+            Class<?> sessionManagerClass = Class.forName("com.sk89q.worldedit.session.SessionManager");
+            Object localSession = sessionManagerClass.getMethod("get", wePlayer.getClass()).invoke(sessionManager, wePlayer);
+
+            Object weWorld = wePlayer.getClass().getMethod("getWorld").invoke(wePlayer);
+            Class<?> localSessionClass = Class.forName("com.sk89q.worldedit.LocalSession");
+            Object weRegion = localSessionClass.getMethod("selection", weWorld.getClass()).invoke(localSession, weWorld);
+
+            if (weRegion == null) return null;
+
+            Class<?> regionClass = Class.forName("com.sk89q.worldedit.regions.Region");
+            Object minPoint = regionClass.getMethod("getMinimumPoint").invoke(weRegion);
+            Object maxPoint = regionClass.getMethod("getMaximumPoint").invoke(weRegion);
+
+            Class<?> vectorClass = Class.forName("com.sk89q.worldedit.Vector");
+            int minX = (int) vectorClass.getMethod("getBlockX").invoke(minPoint);
+            int minY = (int) vectorClass.getMethod("getBlockY").invoke(minPoint);
+            int minZ = (int) vectorClass.getMethod("getBlockZ").invoke(minPoint);
+            int maxX = (int) vectorClass.getMethod("getBlockX").invoke(maxPoint);
+            int maxY = (int) vectorClass.getMethod("getBlockY").invoke(maxPoint);
+            int maxZ = (int) vectorClass.getMethod("getBlockZ").invoke(maxPoint);
+
+            Region region = new Region(name, player.getWorld().getName(), Region.Type.CUBOID, 60);
+            region.setMinX(minX);
+            region.setMinY(minY);
+            region.setMinZ(minZ);
+            region.setMaxX(maxX);
+            region.setMaxY(maxY);
+            region.setMaxZ(maxZ);
+
+            return region;
+        } catch (Exception e) {
+            debug.log("Failed to get WorldEdit selection: %s", e.getMessage());
+            return null;
+        }
     }
 
     private void queueRegionSnapshot(World world, Region region) {
@@ -174,7 +235,7 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
         if (args.length < 2) {
             sender.sendMessage("§eRestoring all regions...");
             for (Region region : regionManager.getAllRegions()) {
-                restoreScheduler.restoreRegion(region.getWorldName(),
+                restoreScheduler.restoreRegionForce(region.getWorldName(),
                     region.getMinChunkX(), region.getMinChunkZ(),
                     region.getMaxChunkX(), region.getMaxChunkZ());
             }
@@ -192,7 +253,7 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
         if (args.length == 2) {
             sender.sendMessage("§eRestoring region §6" + name + "§e...");
             long start = System.currentTimeMillis();
-            restoreScheduler.restoreRegion(region.getWorldName(),
+            restoreScheduler.restoreRegionForce(region.getWorldName(),
                 region.getMinChunkX(), region.getMinChunkZ(),
                 region.getMaxChunkX(), region.getMaxChunkZ());
             debug.performance("restore region " + name, start);
@@ -209,7 +270,7 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
 
                 sender.sendMessage("§eRestoring chunk §6" + chunkX + ", " + chunkZ + "§e...");
                 long start = System.currentTimeMillis();
-                restoreScheduler.restoreChunk(region.getWorldName(), chunkX, chunkZ);
+                restoreScheduler.restoreChunkForce(region.getWorldName(), chunkX, chunkZ);
                 debug.performance("restore chunk " + chunkX + "," + chunkZ, start);
                 sender.sendMessage("§aChunk §6" + chunkX + ", " + chunkZ + " §arestored!");
             } catch (NumberFormatException e) {
@@ -229,7 +290,7 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
 
                 sender.sendMessage("§eRestoring chunks §6" + minCX + "," + minCZ + " §eto §6" + maxCX + "," + maxCZ + "§e...");
                 long start = System.currentTimeMillis();
-                restoreScheduler.restoreRegion(region.getWorldName(), minCX, minCZ, maxCX, maxCZ);
+                restoreScheduler.restoreRegionForce(region.getWorldName(), minCX, minCZ, maxCX, maxCZ);
                 debug.performance("restore area", start);
                 sender.sendMessage("§aChunks restored!");
             } catch (NumberFormatException e) {
@@ -276,9 +337,24 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
     }
 
     private boolean handleDebug(CommandSender sender) {
+        if (!sender.hasPermission("rewind.debug")) {
+            sender.sendMessage("§cNo permission.");
+            return true;
+        }
         debug.setEnabled(!debug.isEnabled());
         sender.sendMessage("§eDebug mode: " + (debug.isEnabled() ? "§aON" : "§cOFF"));
         debug.log("Debug mode toggled " + (debug.isEnabled() ? "on" : "off"));
+        return true;
+    }
+
+    private boolean handleReload(CommandSender sender) {
+        if (!sender.hasPermission("rewind.admin")) {
+            sender.sendMessage("§cNo permission.");
+            return true;
+        }
+        plugin.reloadConfig();
+        plugin.getRestoreScheduler().loadConfig();
+        sender.sendMessage("§aRewind config reloaded!");
         return true;
     }
 
@@ -291,13 +367,14 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§e/rewind restore <name> <chunkX> <chunkZ> §7- Restore specific chunk");
         sender.sendMessage("§e/rewind restore <name> <x1> <z1> <x2> <z2> §7- Restore chunk area");
         sender.sendMessage("§e/rewind info [name] §7- View info");
+        sender.sendMessage("§e/rewind reload §7- Reload config");
         sender.sendMessage("§e/rewind debug §7- Toggle debug mode");
     }
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 1) {
-            return List.of("create", "delete", "list", "restore", "info", "debug").stream()
+            return List.of("create", "delete", "list", "restore", "info", "reload", "debug").stream()
                 .filter(s -> s.startsWith(args[0].toLowerCase()))
                 .collect(Collectors.toList());
         }

@@ -7,7 +7,9 @@ import com.rewind.regions.RegionManager;
 import com.rewind.snapshot.SnapshotManager;
 import com.rewind.scheduler.RestoreScheduler;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -26,6 +28,9 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockSpreadEvent;
 import org.bukkit.event.block.LeavesDecayEvent;
 
+import java.util.EnumSet;
+import java.util.Set;
+
 public class BlockChangeListener implements Listener {
 
     private final RewindPlugin plugin;
@@ -33,6 +38,7 @@ public class BlockChangeListener implements Listener {
     private final SnapshotManager snapshotManager;
     private final RestoreScheduler restoreScheduler;
     private final DebugManager debug;
+    private final Set<Material> interactionBlocks = EnumSet.noneOf(Material.class);
 
     public BlockChangeListener(RewindPlugin plugin, RegionManager regionManager,
                                SnapshotManager snapshotManager, RestoreScheduler restoreScheduler,
@@ -42,6 +48,22 @@ public class BlockChangeListener implements Listener {
         this.snapshotManager = snapshotManager;
         this.restoreScheduler = restoreScheduler;
         this.debug = debug;
+        loadInteractionBlocks();
+    }
+
+    private void loadInteractionBlocks() {
+        interactionBlocks.clear();
+        ConfigurationSection section = plugin.getConfig().getConfigurationSection("interaction-blocks");
+        if (section == null || !section.getBoolean("enabled", true)) return;
+
+        for (String name : section.getStringList("blocks")) {
+            try {
+                interactionBlocks.add(Material.valueOf(name.toUpperCase()));
+            } catch (IllegalArgumentException e) {
+                plugin.getLogger().warning("Invalid interaction block material: " + name);
+            }
+        }
+        debug.log("Loaded %d interaction blocks", interactionBlocks.size());
     }
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
@@ -85,49 +107,89 @@ public class BlockChangeListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
-    public void onBlockSpread(BlockSpreadEvent event) {
-        scheduleRestore(event.getBlock().getLocation(), "block-spread");
-    }
-
-    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
-    public void onBlockFade(BlockFadeEvent event) {
-        scheduleRestore(event.getBlock().getLocation(), "block-fade");
-    }
-
-    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
-    public void onBlockForm(BlockFormEvent event) {
-        scheduleRestore(event.getBlock().getLocation(), "block-form");
-    }
-
-    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
-    public void onBlockFromTo(BlockFromToEvent event) {
-        scheduleRestore(event.getBlock().getLocation(), "block-flow");
-    }
-
-    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onBlockGrow(BlockGrowEvent event) {
+        if (isInteractionBlock(event.getBlock().getType())) {
+            debug.log("Skipping interaction block grow: %s", event.getBlock().getType().name());
+            return;
+        }
         scheduleRestore(event.getBlock().getLocation(), "block-grow");
     }
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onBlockPistonExtend(BlockPistonExtendEvent event) {
+        if (isInteractionBlock(event.getBlock().getType())) {
+            debug.log("Skipping interaction block piston: %s", event.getBlock().getType().name());
+            return;
+        }
         for (org.bukkit.block.Block block : event.getBlocks()) {
-            scheduleRestore(block.getLocation(), "piston-extend");
+            if (!isInteractionBlock(block.getType())) {
+                scheduleRestore(block.getLocation(), "piston-extend");
+            }
         }
         scheduleRestore(event.getBlock().getLocation(), "piston-extend-source");
     }
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onBlockPistonRetract(BlockPistonRetractEvent event) {
+        if (isInteractionBlock(event.getBlock().getType())) {
+            debug.log("Skipping interaction block piston: %s", event.getBlock().getType().name());
+            return;
+        }
         for (org.bukkit.block.Block block : event.getBlocks()) {
-            scheduleRestore(block.getLocation(), "piston-retract");
+            if (!isInteractionBlock(block.getType())) {
+                scheduleRestore(block.getLocation(), "piston-retract");
+            }
         }
         scheduleRestore(event.getBlock().getLocation(), "piston-retract-source");
     }
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onLeavesDecay(LeavesDecayEvent event) {
+        if (isInteractionBlock(event.getBlock().getType())) {
+            debug.log("Skipping interaction block decay: %s", event.getBlock().getType().name());
+            return;
+        }
         scheduleRestore(event.getBlock().getLocation(), "leaves-decay");
+    }
+
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onBlockSpread(BlockSpreadEvent event) {
+        if (isInteractionBlock(event.getBlock().getType())) {
+            debug.log("Skipping interaction block spread: %s", event.getBlock().getType().name());
+            return;
+        }
+        scheduleRestore(event.getBlock().getLocation(), "block-spread");
+    }
+
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onBlockFade(BlockFadeEvent event) {
+        if (isInteractionBlock(event.getBlock().getType())) {
+            debug.log("Skipping interaction block fade: %s", event.getBlock().getType().name());
+            return;
+        }
+        scheduleRestore(event.getBlock().getLocation(), "block-fade");
+    }
+
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onBlockForm(BlockFormEvent event) {
+        if (isInteractionBlock(event.getBlock().getType())) {
+            debug.log("Skipping interaction block form: %s", event.getBlock().getType().name());
+            return;
+        }
+        scheduleRestore(event.getBlock().getLocation(), "block-form");
+    }
+
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onBlockFromTo(BlockFromToEvent event) {
+        if (isInteractionBlock(event.getBlock().getType())) {
+            debug.log("Skipping interaction block flow: %s", event.getBlock().getType().name());
+            return;
+        }
+        scheduleRestore(event.getBlock().getLocation(), "block-flow");
+    }
+
+    private boolean isInteractionBlock(Material material) {
+        return interactionBlocks.contains(material);
     }
 
     private void scheduleRestore(Location loc, String reason) {

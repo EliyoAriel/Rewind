@@ -8,8 +8,10 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Logger;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -23,9 +25,25 @@ public class SnapshotSerializer {
     private static final int SECTION_COUNT = (MAX_Y - MIN_Y) >> 4;
 
     private final Logger logger;
+    private final Set<String> whitelist = new HashSet<>();
 
     public SnapshotSerializer(Logger logger) {
         this.logger = logger;
+    }
+
+    public void loadWhitelist(List<String> blocks) {
+        whitelist.clear();
+        for (String block : blocks) {
+            whitelist.add(block.toUpperCase());
+        }
+    }
+
+    public boolean isWhitelisted(String materialName) {
+        return whitelist.contains(materialName.toUpperCase());
+    }
+
+    public Set<String> getWhitelist() {
+        return whitelist;
     }
 
     public void serialize(ChunkSnapshot snapshot, File file) throws IOException {
@@ -142,7 +160,7 @@ public class SnapshotSerializer {
                 }
             }
 
-            return new SnapshotData(worldName, chunkX, chunkZ, timestamp, blockNames);
+            return new SnapshotData(worldName, chunkX, chunkZ, timestamp, blockNames, this);
         }
     }
 
@@ -152,14 +170,41 @@ public class SnapshotSerializer {
         private final int chunkZ;
         private final long timestamp;
         private final String[][][] blockNames;
+        private final Map<String, Material> materialCache;
+        private final Set<String> whitelistedCache;
 
         public SnapshotData(String worldName, int chunkX, int chunkZ, long timestamp,
-                           String[][][] blockNames) {
+                           String[][][] blockNames, SnapshotSerializer serializer) {
             this.worldName = worldName;
             this.chunkX = chunkX;
             this.chunkZ = chunkZ;
             this.timestamp = timestamp;
             this.blockNames = blockNames;
+            this.materialCache = new HashMap<>();
+            this.whitelistedCache = new HashSet<>();
+
+            Set<String> uniqueNames = new HashSet<>();
+            for (int x = 0; x < 16; x++) {
+                for (int z = 0; z < 16; z++) {
+                    for (int y = MIN_Y; y < MAX_Y; y++) {
+                        int arrayY = y - MIN_Y;
+                        String name = blockNames[x][arrayY][z];
+                        if (name.equals("AIR")) continue;
+                        if (serializer != null && serializer.isWhitelisted(name)) {
+                            whitelistedCache.add(name);
+                            continue;
+                        }
+                        uniqueNames.add(name);
+                    }
+                }
+            }
+
+            for (String name : uniqueNames) {
+                Material mat = Material.matchMaterial(name);
+                if (mat != null) {
+                    materialCache.put(name, mat);
+                }
+            }
         }
 
         public String getWorldName() { return worldName; }
@@ -170,12 +215,17 @@ public class SnapshotSerializer {
 
         public void applyToWorld(World world) {
             org.bukkit.Chunk chunk = world.getChunkAt(chunkX, chunkZ);
+
             for (int x = 0; x < 16; x++) {
                 for (int z = 0; z < 16; z++) {
                     for (int y = MIN_Y; y < MAX_Y; y++) {
                         int arrayY = y - MIN_Y;
                         String blockName = blockNames[x][arrayY][z];
-                        Material mat = Material.matchMaterial(blockName);
+
+                        if (blockName.equals("AIR")) continue;
+                        if (whitelistedCache.contains(blockName)) continue;
+
+                        Material mat = materialCache.get(blockName);
                         if (mat != null) {
                             org.bukkit.block.Block block = chunk.getBlock(x, y, z);
                             if (block.getType() != mat) {

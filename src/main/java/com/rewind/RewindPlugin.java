@@ -32,7 +32,11 @@ public class RewindPlugin extends JavaPlugin {
 
         snapshotManager = new SnapshotManager(getLogger(), getDataFolder());
 
-        restoreScheduler = new RestoreScheduler(this, snapshotManager);
+        if (getConfig().getBoolean("whitelist.enabled", false)) {
+            snapshotManager.loadWhitelist(getConfig().getStringList("whitelist.blocks"));
+        }
+
+        restoreScheduler = new RestoreScheduler(this, snapshotManager, debugManager);
         restoreScheduler.start();
 
         RewindCommand cmd = new RewindCommand(this, regionManager, snapshotManager, restoreScheduler, debugManager);

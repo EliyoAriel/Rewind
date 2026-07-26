@@ -27,6 +27,7 @@ public class Region {
     }
 
     public boolean contains(Location loc) {
+        if (loc.getWorld() == null) return false;
         if (!loc.getWorld().getName().equals(worldName)) return false;
 
         if (type == Type.CUBOID) {

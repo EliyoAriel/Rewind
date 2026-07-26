@@ -30,3 +30,9 @@ permissions:
   rewind.bypass:
     description: Bypass tracking
     default: false
+  rewind.debug:
+    description: Toggle debug mode
+    default: op
+  rewind.admin:
+    description: Admin commands (reload)
+    default: op
