@@ -199,15 +199,21 @@ public class BlockChangeListener implements Listener {
         Region region = regionManager.getRegionAt(loc);
         if (region == null) return;
 
+        String regionName = region.getName();
         int chunkX = loc.getBlockX() >> 4;
         int chunkZ = loc.getBlockZ() >> 4;
 
-        if (!snapshotManager.hasSnapshot(world.getName(), chunkX, chunkZ)) {
+        if (plugin.isChunkExcluded(world.getName(), chunkX, chunkZ)) {
+            debug.log("Chunk [%d, %d] in %s is excluded - skipping restore", chunkX, chunkZ, world.getName());
+            return;
+        }
+
+        if (!snapshotManager.hasSnapshot(regionName, world.getName(), chunkX, chunkZ)) {
             debug.log("No snapshot for chunk [%d, %d] in %s - skipping restore", chunkX, chunkZ, world.getName());
             return;
         }
 
         debug.restore(world.getName(), chunkX, chunkZ, reason);
-        restoreScheduler.scheduleRestore(world.getName(), chunkX, chunkZ, region.getTimer());
+        restoreScheduler.scheduleRestore(regionName, world.getName(), chunkX, chunkZ, region.getTimer());
     }
 }

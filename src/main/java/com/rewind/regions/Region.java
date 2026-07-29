@@ -64,14 +64,19 @@ public class Region {
     }
 
     public boolean isInsideChunk(int chunkX, int chunkZ) {
-        int blockX = (chunkX << 4) + 8;
-        int blockZ = (chunkZ << 4) + 8;
-
         if (type == Type.CUBOID) {
+            int blockX = (chunkX << 4) + 8;
+            int blockZ = (chunkZ << 4) + 8;
             return blockX >= minX && blockX <= maxX && blockZ >= minZ && blockZ <= maxZ;
         } else {
-            int dx = blockX - centerX;
-            int dz = blockZ - centerZ;
+            int chunkMinX = chunkX << 4;
+            int chunkMinZ = chunkZ << 4;
+            int chunkMaxX = chunkMinX + 15;
+            int chunkMaxZ = chunkMinZ + 15;
+            int closestX = Math.max(chunkMinX, Math.min(centerX, chunkMaxX));
+            int closestZ = Math.max(chunkMinZ, Math.min(centerZ, chunkMaxZ));
+            int dx = closestX - centerX;
+            int dz = closestZ - centerZ;
             return (dx * dx + dz * dz) <= (radius * radius);
         }
     }

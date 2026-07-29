@@ -160,7 +160,7 @@ public class SnapshotSerializer {
                 }
             }
 
-            return new SnapshotData(worldName, chunkX, chunkZ, timestamp, blockNames, this);
+            return new SnapshotData(worldName, chunkX, chunkZ, timestamp, blockNames, palette, this);
         }
     }
 
@@ -174,7 +174,7 @@ public class SnapshotSerializer {
         private final Set<String> whitelistedCache;
 
         public SnapshotData(String worldName, int chunkX, int chunkZ, long timestamp,
-                           String[][][] blockNames, SnapshotSerializer serializer) {
+                           String[][][] blockNames, String[] palette, SnapshotSerializer serializer) {
             this.worldName = worldName;
             this.chunkX = chunkX;
             this.chunkZ = chunkZ;
@@ -183,23 +183,12 @@ public class SnapshotSerializer {
             this.materialCache = new HashMap<>();
             this.whitelistedCache = new HashSet<>();
 
-            Set<String> uniqueNames = new HashSet<>();
-            for (int x = 0; x < 16; x++) {
-                for (int z = 0; z < 16; z++) {
-                    for (int y = MIN_Y; y < MAX_Y; y++) {
-                        int arrayY = y - MIN_Y;
-                        String name = blockNames[x][arrayY][z];
-                        if (name.equals("AIR")) continue;
-                        if (serializer != null && serializer.isWhitelisted(name)) {
-                            whitelistedCache.add(name);
-                            continue;
-                        }
-                        uniqueNames.add(name);
-                    }
+            for (String name : palette) {
+                if (name.equals("AIR")) continue;
+                if (serializer != null && serializer.isWhitelisted(name)) {
+                    whitelistedCache.add(name);
+                    continue;
                 }
-            }
-
-            for (String name : uniqueNames) {
                 Material mat = Material.matchMaterial(name);
                 if (mat != null) {
                     materialCache.put(name, mat);

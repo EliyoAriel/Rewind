@@ -8,7 +8,7 @@ softdepend: [WorldEdit]
 commands:
   rewind:
     description: Rewind main command
-    usage: /rewind <create|delete|list|restore|info>
+    usage: /rewind <create|delete|list|restore|info|show|reload|debug>
     permission: rewind.info
 
 permissions:
@@ -32,6 +32,9 @@ permissions:
     default: false
   rewind.debug:
     description: Toggle debug mode
+    default: op
+  rewind.show:
+    description: Show region chunk particles
     default: op
   rewind.admin:
     description: Admin commands (reload)

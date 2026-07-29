@@ -7,15 +7,21 @@ import com.rewind.regions.RegionManager;
 import com.rewind.scheduler.RestoreScheduler;
 import com.rewind.snapshot.SnapshotManager;
 import org.bukkit.Location;
+import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
+import org.bukkit.scheduler.BukkitTask;
 
+import com.rewind.snapshot.SnapshotKey;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class RewindCommand implements CommandExecutor, TabCompleter {
@@ -25,6 +31,8 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
     private final SnapshotManager snapshotManager;
     private final RestoreScheduler restoreScheduler;
     private final DebugManager debug;
+
+    private final ConcurrentHashMap<UUID, Map<String, BukkitTask>> showTasks = new ConcurrentHashMap<>();
 
     public RewindCommand(RewindPlugin plugin, RegionManager regionManager,
                          SnapshotManager snapshotManager, RestoreScheduler restoreScheduler,
@@ -72,6 +80,13 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
             }
             case "reload" -> {
                 return handleReload(sender);
+            }
+            case "show" -> {
+                if (args.length < 2) {
+                    sender.sendMessage("§cUsage: /rewind show <name>");
+                    return true;
+                }
+                return handleShow(sender, args);
             }
             default -> {
                 sendHelp(sender);
@@ -188,7 +203,7 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
         for (int cx = minChunkX; cx <= maxChunkX; cx++) {
             for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
                 if (region.isInsideChunk(cx, cz)) {
-                    snapshotManager.queueSnapshot(world, cx, cz);
+                    snapshotManager.queueSnapshot(region.getName(), world, cx, cz);
                     count++;
                 }
             }
@@ -200,15 +215,15 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
 
     private boolean handleDelete(CommandSender sender, String name) {
         Region region = regionManager.getRegion(name);
-        if (region != null) {
-            snapshotManager.removeRegionSnapshots(region);
-            restoreScheduler.cancelRegionRestores(region.getWorldName(),
-                region.getMinChunkX(), region.getMinChunkZ(),
-                region.getMaxChunkX(), region.getMaxChunkZ());
-            debug.region(name, "deleted");
+        if (region == null) {
+            sender.sendMessage("§cRegion §e" + name + " §cnot found.");
+            return true;
         }
 
         if (regionManager.deleteRegion(name)) {
+            snapshotManager.removeRegionSnapshots(region);
+            restoreScheduler.cancelRegionRestores(region.getName());
+            debug.region(name, "deleted");
             sender.sendMessage("§cRegion §e" + name + " §cdeleted.");
         } else {
             sender.sendMessage("§cRegion §e" + name + " §cnot found.");
@@ -235,11 +250,11 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
         if (args.length < 2) {
             sender.sendMessage("§eRestoring all regions...");
             for (Region region : regionManager.getAllRegions()) {
-                restoreScheduler.restoreRegionForce(region.getWorldName(),
+                restoreScheduler.restoreRegion(region.getName(), region.getWorldName(),
                     region.getMinChunkX(), region.getMinChunkZ(),
                     region.getMaxChunkX(), region.getMaxChunkZ());
             }
-            sender.sendMessage("§aAll regions restored!");
+            sender.sendMessage("§aAll regions scheduled for restore!");
             return true;
         }
 
@@ -253,7 +268,7 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
         if (args.length == 2) {
             sender.sendMessage("§eRestoring region §6" + name + "§e...");
             long start = System.currentTimeMillis();
-            restoreScheduler.restoreRegionForce(region.getWorldName(),
+            restoreScheduler.restoreRegionForce(region.getName(), region.getWorldName(),
                 region.getMinChunkX(), region.getMinChunkZ(),
                 region.getMaxChunkX(), region.getMaxChunkZ());
             debug.performance("restore region " + name, start);
@@ -263,14 +278,14 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
                 int chunkX = Integer.parseInt(args[2]);
                 int chunkZ = Integer.parseInt(args[3]);
 
-                if (!snapshotManager.hasSnapshot(region.getWorldName(), chunkX, chunkZ)) {
+                if (!snapshotManager.hasSnapshot(region.getName(), region.getWorldName(), chunkX, chunkZ)) {
                     sender.sendMessage("§cNo snapshot for chunk " + chunkX + ", " + chunkZ);
                     return true;
                 }
 
                 sender.sendMessage("§eRestoring chunk §6" + chunkX + ", " + chunkZ + "§e...");
                 long start = System.currentTimeMillis();
-                restoreScheduler.restoreChunkForce(region.getWorldName(), chunkX, chunkZ);
+                restoreScheduler.restoreChunkForce(region.getName(), region.getWorldName(), chunkX, chunkZ);
                 debug.performance("restore chunk " + chunkX + "," + chunkZ, start);
                 sender.sendMessage("§aChunk §6" + chunkX + ", " + chunkZ + " §arestored!");
             } catch (NumberFormatException e) {
@@ -290,7 +305,7 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
 
                 sender.sendMessage("§eRestoring chunks §6" + minCX + "," + minCZ + " §eto §6" + maxCX + "," + maxCZ + "§e...");
                 long start = System.currentTimeMillis();
-                restoreScheduler.restoreRegionForce(region.getWorldName(), minCX, minCZ, maxCX, maxCZ);
+                restoreScheduler.restoreRegionForce(region.getName(), region.getWorldName(), minCX, minCZ, maxCX, maxCZ);
                 debug.performance("restore area", start);
                 sender.sendMessage("§aChunks restored!");
             } catch (NumberFormatException e) {
@@ -358,6 +373,84 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
+    private boolean handleShow(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("rewind.show")) {
+            sender.sendMessage("§cNo permission.");
+            return true;
+        }
+
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§cOnly players can use this command.");
+            return true;
+        }
+
+        String name = args[1];
+        Region region = regionManager.getRegion(name);
+        if (region == null) {
+            sender.sendMessage("§cRegion §e" + name + " §cnot found.");
+            return true;
+        }
+
+        if (!player.getWorld().getName().equals(region.getWorldName())) {
+            sender.sendMessage("§cYou must be in the same world as the region.");
+            return true;
+        }
+
+        java.util.Set<SnapshotKey> keys = snapshotManager.getSnapshotKeysInRegion(region.getName());
+
+        UUID playerId = player.getUniqueId();
+        Map<String, BukkitTask> playerShows = showTasks.computeIfAbsent(playerId, k -> new ConcurrentHashMap<>());
+
+        BukkitTask existing = playerShows.get(region.getName());
+        if (existing != null) {
+            existing.cancel();
+            playerShows.remove(region.getName());
+            if (playerShows.isEmpty()) showTasks.remove(playerId);
+            sender.sendMessage("§cShow off §7(" + region.getName() + ")");
+            return true;
+        }
+
+        int y = player.getLocation().getBlockY() + 2;
+        int total = keys.size();
+        sender.sendMessage("§aShow on §7(" + total + " snapshotted chunks for §6" + region.getName() + "§7)");
+
+        Particle.DustOptions dust = new Particle.DustOptions(org.bukkit.Color.LIME, 2f);
+        BukkitTask task = org.bukkit.Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            for (SnapshotKey key : keys) {
+                drawChunkEdges(player, key, y, dust);
+            }
+        }, 0, 20);
+
+        playerShows.put(region.getName(), task);
+
+        return true;
+    }
+
+    private void drawChunkEdges(Player player, SnapshotKey key, int y, Particle.DustOptions dust) {
+        int minX = key.getChunkX() << 4;
+        int minZ = key.getChunkZ() << 4;
+        int maxX = minX + 15;
+        int maxZ = minZ + 15;
+
+        for (int x = minX; x < maxX; x += 2) {
+            player.spawnParticle(Particle.DUST, x + 0.5, y, minZ + 0.5, 1, 0, 0, 0, 0, dust);
+            player.spawnParticle(Particle.DUST, x + 0.5, y, maxZ + 0.5, 1, 0, 0, 0, 0, dust);
+        }
+        for (int z = minZ; z < maxZ; z += 2) {
+            player.spawnParticle(Particle.DUST, minX + 0.5, y, z + 0.5, 1, 0, 0, 0, 0, dust);
+            player.spawnParticle(Particle.DUST, maxX + 0.5, y, z + 0.5, 1, 0, 0, 0, 0, dust);
+        }
+    }
+
+    public void cancelAllShows() {
+        for (Map<String, BukkitTask> playerShows : showTasks.values()) {
+            for (BukkitTask task : playerShows.values()) {
+                task.cancel();
+            }
+        }
+        showTasks.clear();
+    }
+
     private void sendHelp(CommandSender sender) {
         sender.sendMessage("§6=== Rewind Commands ===");
         sender.sendMessage("§e/rewind create <name> [radius] §7- Create region");
@@ -367,6 +460,7 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§e/rewind restore <name> <chunkX> <chunkZ> §7- Restore specific chunk");
         sender.sendMessage("§e/rewind restore <name> <x1> <z1> <x2> <z2> §7- Restore chunk area");
         sender.sendMessage("§e/rewind info [name] §7- View info");
+        sender.sendMessage("§e/rewind show <name> §7- Toggle snapshotted chunk grid");
         sender.sendMessage("§e/rewind reload §7- Reload config");
         sender.sendMessage("§e/rewind debug §7- Toggle debug mode");
     }
@@ -374,14 +468,14 @@ public class RewindCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 1) {
-            return List.of("create", "delete", "list", "restore", "info", "reload", "debug").stream()
+            return List.of("create", "delete", "list", "restore", "info", "show", "reload", "debug").stream()
                 .filter(s -> s.startsWith(args[0].toLowerCase()))
                 .collect(Collectors.toList());
         }
 
         if (args.length == 2) {
             switch (args[0].toLowerCase()) {
-                case "delete", "restore", "info" -> {
+                case "delete", "restore", "info", "show" -> {
                     return regionManager.getAllRegions().stream()
                         .map(Region::getName)
                         .filter(n -> n.toLowerCase().startsWith(args[1].toLowerCase()))

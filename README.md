@@ -36,6 +36,7 @@ A Minecraft Paper plugin that snapshots designated regions, then automatically r
 | `/rewind restore <name> <x1> <z1> <x2> <z2>` | Force restore chunk area | `rewind.restore` |
 | `/rewind info` | View plugin info | `rewind.info` |
 | `/rewind info <name>` | View region info | `rewind.info` |
+| `/rewind show <name>` | Toggle snapshotted chunk grid overlay | `rewind.show` |
 | `/rewind reload` | Reload config | `rewind.admin` |
 | `/rewind debug` | Toggle debug mode | `rewind.debug` |
 
@@ -49,6 +50,7 @@ A Minecraft Paper plugin that snapshots designated regions, then automatically r
 | `rewind.restore` | op | Manual restore + progress bar |
 | `rewind.info` | true | View info |
 | `rewind.bypass` | false | Bypass block change tracking |
+| `rewind.show` | op | Toggle region chunk grid overlay |
 | `rewind.debug` | op | Toggle debug mode |
 | `rewind.admin` | op | Reload config |
 
@@ -104,15 +106,49 @@ whitelist:
     # ... (60+ materials in default config)
 ```
 
+## Developer API
+
+```java
+RewindAPI api = RewindPlugin.getAPI();
+```
+
+### Chunk Exclusion
+
+Exclude a chunk ref-counted — call `exclude` once per owner, `unexclude` when done. Pending restores get cancelled on first exclude.
+
+```java
+api.excludeChunk("world", 5, 3);
+api.unexcludeChunk("world", 5, 3);
+api.isChunkExcluded("world", 5, 3);
+api.excludeChunkArea("world", minCX, minCZ, maxCX, maxCZ);
+api.unexcludeChunkArea("world", minCX, minCZ, maxCX, maxCZ);
+```
+
+### Other API Methods
+
+| Method | Description |
+|--------|-------------|
+| `createRegion(name, world, type, timer)` | Create a generic region |
+| `createCuboidRegion(name, world, timer, x1, y1, z1, x2, y2, z2)` | Create cuboid region |
+| `createRadiusRegion(name, world, timer, cx, cy, cz, radius)` | Create radius region |
+| `deleteRegion(name)` | Delete region and its snapshots |
+| `queueRegionSnapshots(region, world)` | Queue all chunks in a region for snapshotting |
+| `forceRestoreRegion(world, minCX, minCZ, maxCX, maxCZ)` | Immediately restore chunk area |
+| `gradualRestoreRegion(world, minCX, minCZ, maxCX, maxCZ)` | Rate-limited restore |
+| `scheduleAutoRestore(world, cx, cz, seconds)` | Schedule a timed restore |
+| `cancelRestores(world, minCX, minCZ, maxCX, maxCZ)` | Cancel pending restores in area |
+| `hasSnapshot(world, cx, cz)` | Check if snapshot exists |
+| `getPendingRestoreCount()` | Total pending restores |
+
 ## How It Works
 
 ### 1. Region Creation
 
 When you create a region (`/rewind create`):
-- All chunks in the region are queued for snapshot
-- Processes 10 chunks/tick (only loaded chunks are snapshotted)
-- Unloaded chunks are skipped (no async chunk loading for snapshots)
-- Snapshots saved to disk as compressed binary files
+- All chunks intersecting the region are queued for snapshot
+- Processes 5 chunks/tick (loaded chunks snapshotted immediately, unloaded via async chunk load)
+- Snapshots saved to disk under `plugins/Rewind/snapshots/<regionName>/` as compressed binary files
+- Each region has an independent snapshot index
 
 ### 2. Automatic Restore
 
@@ -181,6 +217,10 @@ Binary format with gzip compression (~2-8KB per chunk):
 | Decompression | Async (off main thread) |
 | Material resolution | Cached per-chunk at load time |
 
+### 6. Region Visualization
+
+`/rewind show <name>` — toggles a green particle outline on snapshotted chunks. Cleans up on disable.
+
 ## Debug Mode
 
 Enable with `/rewind debug` (requires `rewind.debug` permission).
@@ -194,3 +234,7 @@ Debug logs:
 - Interaction block skips
 
 Notifications and progress bar only show during automatic restores when debug is enabled. Manual restore always shows progress.
+
+## License
+
+[GPL-3.0](LICENSE)

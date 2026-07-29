@@ -44,7 +44,7 @@ public class RegionStorage {
     }
 
     public void addRegion(Region region) {
-        String path = "regions." + region.getName();
+        String path = "regions." + region.getName().toLowerCase();
         config.set(path + ".world", region.getWorldName());
         config.set(path + ".type", region.getType().name());
         config.set(path + ".timer", region.getTimer());
@@ -67,7 +67,7 @@ public class RegionStorage {
     }
 
     public void removeRegion(String name) {
-        config.set("regions." + name, null);
+        config.set("regions." + name.toLowerCase(), null);
         save();
     }
 

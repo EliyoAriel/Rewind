@@ -138,7 +138,7 @@ public class RestoreScheduler {
             Map.Entry<String, RestoreTask> entry = iterator.next();
             RestoreTask task = entry.getValue();
             if (tickCounter >= task.restoreAt) {
-                gradualRestoreQueue.add(new ChunkCoord(task.worldName, task.chunkX, task.chunkZ, false));
+                gradualRestoreQueue.add(new ChunkCoord(task.regionName, task.worldName, task.chunkX, task.chunkZ, false));
                 iterator.remove();
             }
         }
@@ -201,7 +201,7 @@ public class RestoreScheduler {
         if (world == null) return;
 
         CompletableFuture<SnapshotSerializer.SnapshotData> future = CompletableFuture.supplyAsync(() ->
-            snapshotManager.loadSnapshotData(coord.worldName, coord.chunkX, coord.chunkZ)
+            snapshotManager.loadSnapshotData(coord.regionName, coord.worldName, coord.chunkX, coord.chunkZ)
         );
 
         future.thenAcceptAsync(data -> {
@@ -228,86 +228,86 @@ public class RestoreScheduler {
         });
     }
 
-    public void scheduleRestore(String worldName, int chunkX, int chunkZ, int timerSeconds) {
-        String key = worldName + ":" + chunkX + ":" + chunkZ;
+    public void scheduleRestore(String regionName, String worldName, int chunkX, int chunkZ, int timerSeconds) {
+        regionName = regionName.toLowerCase();
+        String key = regionName + ":" + worldName + ":" + chunkX + ":" + chunkZ;
 
         RestoreTask existing = pendingRestores.get(key);
         if (existing != null) {
             return;
         }
 
-        RestoreTask task = new RestoreTask(worldName, chunkX, chunkZ, tickCounter + (timerSeconds * 20));
+        RestoreTask task = new RestoreTask(regionName, worldName, chunkX, chunkZ, tickCounter + (timerSeconds * 20));
         pendingRestores.put(key, task);
     }
 
-    public void restoreRegion(String worldName, int minChunkX, int minChunkZ, int maxChunkX, int maxChunkZ) {
-        Set<SnapshotKey> keys = snapshotManager.getSnapshotKeysInRegion(worldName, minChunkX, minChunkZ, maxChunkX, maxChunkZ);
+    public void restoreRegion(String regionName, String worldName, int minChunkX, int minChunkZ, int maxChunkX, int maxChunkZ) {
+        regionName = regionName.toLowerCase();
+        Set<SnapshotKey> keys = snapshotManager.getSnapshotKeysInRegion(regionName, worldName, minChunkX, minChunkZ, maxChunkX, maxChunkZ);
 
         totalRestores.set(keys.size());
         completedRestores.set(0);
 
         for (SnapshotKey key : keys) {
-            String taskKey = worldName + ":" + key.getChunkX() + ":" + key.getChunkZ();
+            String taskKey = regionName + ":" + worldName + ":" + key.getChunkX() + ":" + key.getChunkZ();
             pendingRestores.remove(taskKey);
-            gradualRestoreQueue.add(new ChunkCoord(worldName, key.getChunkX(), key.getChunkZ(), false));
+            gradualRestoreQueue.add(new ChunkCoord(regionName, worldName, key.getChunkX(), key.getChunkZ(), false));
         }
     }
 
-    public void restoreChunk(String worldName, int chunkX, int chunkZ) {
-        String taskKey = worldName + ":" + chunkX + ":" + chunkZ;
+    public void restoreChunk(String regionName, String worldName, int chunkX, int chunkZ) {
+        regionName = regionName.toLowerCase();
+        String taskKey = regionName + ":" + worldName + ":" + chunkX + ":" + chunkZ;
         pendingRestores.remove(taskKey);
-        gradualRestoreQueue.add(new ChunkCoord(worldName, chunkX, chunkZ, false));
+        gradualRestoreQueue.add(new ChunkCoord(regionName, worldName, chunkX, chunkZ, false));
         totalRestores.incrementAndGet();
     }
 
-    public void restoreRegionForce(String worldName, int minChunkX, int minChunkZ, int maxChunkX, int maxChunkZ) {
-        Set<SnapshotKey> keys = snapshotManager.getSnapshotKeysInRegion(worldName, minChunkX, minChunkZ, maxChunkX, maxChunkZ);
+    public void restoreRegionForce(String regionName, String worldName, int minChunkX, int minChunkZ, int maxChunkX, int maxChunkZ) {
+        regionName = regionName.toLowerCase();
+        Set<SnapshotKey> keys = snapshotManager.getSnapshotKeysInRegion(regionName, worldName, minChunkX, minChunkZ, maxChunkX, maxChunkZ);
 
         totalRestores.set(keys.size());
         completedRestores.set(0);
         lastBatchManual = true;
 
         for (SnapshotKey key : keys) {
-            String taskKey = worldName + ":" + key.getChunkX() + ":" + key.getChunkZ();
+            String taskKey = regionName + ":" + worldName + ":" + key.getChunkX() + ":" + key.getChunkZ();
             pendingRestores.remove(taskKey);
-            manualForceQueue.add(new ChunkCoord(worldName, key.getChunkX(), key.getChunkZ(), true));
+            manualForceQueue.add(new ChunkCoord(regionName, worldName, key.getChunkX(), key.getChunkZ(), true));
         }
     }
 
-    public void restoreChunkForce(String worldName, int chunkX, int chunkZ) {
-        String taskKey = worldName + ":" + chunkX + ":" + chunkZ;
+    public void restoreChunkForce(String regionName, String worldName, int chunkX, int chunkZ) {
+        regionName = regionName.toLowerCase();
+        String taskKey = regionName + ":" + worldName + ":" + chunkX + ":" + chunkZ;
         pendingRestores.remove(taskKey);
-        manualForceQueue.add(new ChunkCoord(worldName, chunkX, chunkZ, true));
+        manualForceQueue.add(new ChunkCoord(regionName, worldName, chunkX, chunkZ, true));
         totalRestores.incrementAndGet();
         lastBatchManual = true;
     }
 
-    public void cancelRegionRestores(String worldName, int minChunkX, int minChunkZ, int maxChunkX, int maxChunkZ) {
+    public void cancelChunkRestores(String worldName, int chunkX, int chunkZ) {
         pendingRestores.entrySet().removeIf(entry -> {
             String[] parts = entry.getKey().split(":");
-            String wn = parts[0];
-            int cx = Integer.parseInt(parts[1]);
-            int cz = Integer.parseInt(parts[2]);
-            return wn.equals(worldName) && cx >= minChunkX && cx <= maxChunkX && cz >= minChunkZ && cz <= maxChunkZ;
+            return parts.length == 4 && parts[1].equals(worldName) &&
+                   Integer.parseInt(parts[2]) == chunkX && Integer.parseInt(parts[3]) == chunkZ;
         });
-
         gradualRestoreQueue.removeIf(coord ->
-            coord.worldName.equals(worldName) &&
-            coord.chunkX >= minChunkX && coord.chunkX <= maxChunkX &&
-            coord.chunkZ >= minChunkZ && coord.chunkZ <= maxChunkZ
-        );
-
+            coord.worldName.equals(worldName) && coord.chunkX == chunkX && coord.chunkZ == chunkZ);
         skippedQueue.removeIf(coord ->
-            coord.worldName.equals(worldName) &&
-            coord.chunkX >= minChunkX && coord.chunkX <= maxChunkX &&
-            coord.chunkZ >= minChunkZ && coord.chunkZ <= maxChunkZ
-        );
-
+            coord.worldName.equals(worldName) && coord.chunkX == chunkX && coord.chunkZ == chunkZ);
         manualForceQueue.removeIf(coord ->
-            coord.worldName.equals(worldName) &&
-            coord.chunkX >= minChunkX && coord.chunkX <= maxChunkX &&
-            coord.chunkZ >= minChunkZ && coord.chunkZ <= maxChunkZ
-        );
+            coord.worldName.equals(worldName) && coord.chunkX == chunkX && coord.chunkZ == chunkZ);
+    }
+
+    public void cancelRegionRestores(String regionName) {
+        String lower = regionName.toLowerCase();
+        pendingRestores.entrySet().removeIf(entry -> entry.getKey().startsWith(lower + ":"));
+
+        gradualRestoreQueue.removeIf(coord -> coord.regionName.equals(lower));
+        skippedQueue.removeIf(coord -> coord.regionName.equals(lower));
+        manualForceQueue.removeIf(coord -> coord.regionName.equals(lower));
     }
 
     public int getPendingCount() {
@@ -329,7 +329,6 @@ public class RestoreScheduler {
     private void sendNotification(String worldName, int chunkX, int chunkZ, int seconds) {
         World world = Bukkit.getWorld(worldName);
         if (world == null) return;
-        if (!debug.isEnabled()) return;
 
         String message = notificationChat.replace("&", "\u00a7")
             .replace("%seconds%", String.valueOf(seconds))
@@ -409,12 +408,14 @@ public class RestoreScheduler {
     }
 
     private static class ChunkCoord {
+        final String regionName;
         final String worldName;
         final int chunkX;
         final int chunkZ;
         final boolean manual;
 
-        ChunkCoord(String worldName, int chunkX, int chunkZ, boolean manual) {
+        ChunkCoord(String regionName, String worldName, int chunkX, int chunkZ, boolean manual) {
+            this.regionName = regionName.toLowerCase();
             this.worldName = worldName;
             this.chunkX = chunkX;
             this.chunkZ = chunkZ;
@@ -423,12 +424,14 @@ public class RestoreScheduler {
     }
 
     private static class RestoreTask {
+        final String regionName;
         final String worldName;
         final int chunkX;
         final int chunkZ;
         volatile int restoreAt;
 
-        RestoreTask(String worldName, int chunkX, int chunkZ, int restoreAt) {
+        RestoreTask(String regionName, String worldName, int chunkX, int chunkZ, int restoreAt) {
+            this.regionName = regionName.toLowerCase();
             this.worldName = worldName;
             this.chunkX = chunkX;
             this.chunkZ = chunkZ;
