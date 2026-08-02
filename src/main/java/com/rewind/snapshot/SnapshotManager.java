@@ -19,7 +19,7 @@ public class SnapshotManager {
     private final ConcurrentHashMap<String, ConcurrentHashMap<SnapshotKey, Long>> snapshotIndex = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<SnapshotQueueItem> snapshotQueue = new ConcurrentLinkedQueue<>();
 
-    private static final int SNAPSHOTS_PER_TICK = 5;
+    private static final int SNAPSHOTS_PER_TICK = 20;
 
     private static class SnapshotQueueItem {
         final String regionName;

@@ -12,6 +12,7 @@ A Minecraft Paper plugin that snapshots designated regions, then automatically r
 - **14 block triggers** - Tracks player changes, fire, explosions, pistons, water/lava, growth, and more
 - **Interaction blocks** - Doors, plants, pistons etc. don't trigger restore (configurable)
 - **Block whitelist** - Chests, signs, banners etc. skip restore (configurable)
+- **Full rewind** - Restore also removes blocks placed after the snapshot, not just repairs removed ones
 - **Priority system** - Timer based on change count (low/normal/high)
 - **WorldEdit support** - Create cuboid regions from WE selection
 - **Disk-only storage** - Snapshots on disk with gzip + palette compression (~2-8KB per chunk)
@@ -146,7 +147,7 @@ api.unexcludeChunkArea("world", minCX, minCZ, maxCX, maxCZ);
 
 When you create a region (`/rewind create`):
 - All chunks intersecting the region are queued for snapshot
-- Processes 5 chunks/tick (loaded chunks snapshotted immediately, unloaded via async chunk load)
+- Processes 20 chunks/tick (loaded chunks snapshotted immediately, unloaded via async chunk load)
 - Snapshots saved to disk under `plugins/Rewind/snapshots/<regionName>/` as compressed binary files
 - Each region has an independent snapshot index
 
@@ -176,6 +177,8 @@ State-only blocks (doors, plants, pistons, etc.) don't trigger restore timers. T
 ### 5. Block Whitelist
 
 When enabled, whitelisted blocks (chests, signs, banners) are skipped during restore. Their contents/state are preserved.
+
+Every other block is reverted to its exact snapshot state — including positions that were air at snapshot time, so blocks placed after the region was created are removed on restore.
 
 ## Triggered Events
 
@@ -211,7 +214,7 @@ Binary format with gzip compression (~2-8KB per chunk):
 | Metric | Value |
 |--------|-------|
 | Snapshot size | ~2-8KB per chunk |
-| Snapshot creation | 10 chunks/tick |
+| Snapshot creation | 20 chunks/tick |
 | Restore speed | 1 chunk/interval (configurable) |
 | Memory usage | Minimal (ConcurrentHashMap index only) |
 | Decompression | Async (off main thread) |
@@ -220,6 +223,13 @@ Binary format with gzip compression (~2-8KB per chunk):
 ### 6. Region Visualization
 
 `/rewind show <name>` — toggles a green particle outline on snapshotted chunks. Cleans up on disable.
+
+## Integrations
+
+- **LandClaim** — claims are excluded from restore while they exist; create/upgrade/delete re-sync exclusions automatically.
+- **SupplyDrop** — crate chunks are excluded while a crate is landed, so drops are never reverted.
+
+Both use the ref-counted chunk exclusion API above — no extra config needed.
 
 ## Debug Mode
 

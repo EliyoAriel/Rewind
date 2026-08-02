@@ -205,27 +205,38 @@ public class RestoreScheduler {
         );
 
         future.thenAcceptAsync(data -> {
-            if (data == null) return;
+            if (data == null) {
+                Bukkit.getScheduler().runTask(plugin, () -> completeOne(coord));
+                return;
+            }
             Bukkit.getScheduler().runTask(plugin, () -> {
+                if (plugin.isChunkExcluded(coord.worldName, coord.chunkX, coord.chunkZ)) {
+                    debug.log("Chunk [%d, %d] in %s excluded - skipping apply", coord.chunkX, coord.chunkZ, coord.worldName);
+                    completeOne(coord);
+                    return;
+                }
                 data.applyToWorld(world);
-                completedRestores.incrementAndGet();
                 playRestoreSound(world, coord.chunkX, coord.chunkZ);
                 sendProgress(coord.manual);
-
-                if (completedRestores.get() >= totalRestores.get()) {
-                    if (lastBatchManual) {
-                        for (Player player : Bukkit.getOnlinePlayers()) {
-                            if (player.hasPermission("rewind.restore")) {
-                                player.sendActionBar("§aRewind complete!");
-                            }
-                        }
-                    }
-                    totalRestores.set(0);
-                    completedRestores.set(0);
-                    lastBatchManual = false;
-                }
+                completeOne(coord);
             });
         });
+    }
+
+    private void completeOne(ChunkCoord coord) {
+        completedRestores.incrementAndGet();
+        if (completedRestores.get() >= totalRestores.get()) {
+            if (lastBatchManual) {
+                for (Player player : Bukkit.getOnlinePlayers()) {
+                    if (player.hasPermission("rewind.restore")) {
+                        player.sendActionBar("§aRewind complete!");
+                    }
+                }
+            }
+            totalRestores.set(0);
+            completedRestores.set(0);
+            lastBatchManual = false;
+        }
     }
 
     public void scheduleRestore(String regionName, String worldName, int chunkX, int chunkZ, int timerSeconds) {

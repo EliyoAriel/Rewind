@@ -211,15 +211,14 @@ public class SnapshotSerializer {
                         int arrayY = y - MIN_Y;
                         String blockName = blockNames[x][arrayY][z];
 
-                        if (blockName.equals("AIR")) continue;
                         if (whitelistedCache.contains(blockName)) continue;
 
-                        Material mat = materialCache.get(blockName);
-                        if (mat != null) {
-                            org.bukkit.block.Block block = chunk.getBlock(x, y, z);
-                            if (block.getType() != mat) {
-                                block.setType(mat, false);
-                            }
+                        Material mat = blockName.equals("AIR") ? Material.AIR : materialCache.get(blockName);
+                        if (mat == null) continue;
+
+                        org.bukkit.block.Block block = chunk.getBlock(x, y, z);
+                        if (block.getType() != mat) {
+                            block.setType(mat, false);
                         }
                     }
                 }
